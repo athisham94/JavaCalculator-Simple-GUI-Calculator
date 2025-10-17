@@ -1,12 +1,8 @@
-
-import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.math.BigDecimal;
-import java.math.MathContext;
 import java.math.RoundingMode;
-import java.util.HashMap;
-import java.util.Map;
+import javax.swing.*;
 
 public class CalculatorApp extends JFrame {
     private final JTextField display = new JTextField("0");
@@ -15,7 +11,6 @@ public class CalculatorApp extends JFrame {
     private String pendingOp = null;
     private boolean startNewEntry = true;
     private boolean justEvaluated = false;
-    private static final MathContext MC = new MathContext(16, RoundingMode.HALF_UP);
     private static final int SCALE = 12;
 
     public CalculatorApp() {
@@ -24,16 +19,19 @@ public class CalculatorApp extends JFrame {
         setSize(360, 520);
         setLocationRelativeTo(null);
         setResizable(false);
+
         display.setEditable(false);
         display.setHorizontalAlignment(SwingConstants.RIGHT);
-        display.setFont(new Font("Inter", Font.PLAIN, 28));
+        display.setFont(display.getFont().deriveFont(28f));
         display.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
         display.setBackground(Color.WHITE);
+
         JPanel keys = buildKeypad();
         setLayout(new BorderLayout(0, 0));
         add(display, BorderLayout.NORTH);
         add(keys, BorderLayout.CENTER);
         installKeyBindings(keys);
+
         setVisible(true);
     }
 
@@ -53,6 +51,7 @@ public class CalculatorApp extends JFrame {
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.weightx = 1;
         gbc.weighty = 1;
+
         for (int r = 0; r < layout.length; r++) {
             for (int c = 0; c < layout[r].length; c++) {
                 String label = layout[r][c];
@@ -63,7 +62,7 @@ public class CalculatorApp extends JFrame {
                     continue;
                 }
                 JButton btn = new JButton(label);
-                btn.setFont(new Font("Inter", Font.BOLD, 20));
+                btn.setFont(new Font("SansSerif", Font.BOLD, 20));
                 btn.setFocusPainted(false);
                 btn.setBorder(BorderFactory.createEmptyBorder(14, 12, 14, 12));
                 if (isOperator(label) || label.equals("=")) {
@@ -184,7 +183,8 @@ public class CalculatorApp extends JFrame {
     private void percent() {
         BigDecimal result;
         if (stored != null && pendingOp != null) {
-            result = stored.multiply(current).divide(BigDecimal.valueOf(100), SCALE, RoundingMode.HALF_UP);
+            result = stored.multiply(current)
+                    .divide(BigDecimal.valueOf(100), SCALE, RoundingMode.HALF_UP);
         } else {
             result = current.divide(BigDecimal.valueOf(100), SCALE, RoundingMode.HALF_UP);
         }
@@ -197,12 +197,7 @@ public class CalculatorApp extends JFrame {
         if (pendingOp != null && !startNewEntry && !justEvaluated) {
             evaluate();
         }
-        if (stored == null || justEvaluated) {
-            stored = parseDisplay();
-        } else if (startNewEntry) {
-        } else {
-            stored = parseDisplay();
-        }
+        stored = parseDisplay();   // always capture current as left operand
         pendingOp = op;
         startNewEntry = true;
         justEvaluated = false;
@@ -218,9 +213,9 @@ public class CalculatorApp extends JFrame {
         BigDecimal result;
         try {
             switch (pendingOp) {
-                case "+": result = stored.add(rhs, MC); break;
-                case "-": result = stored.subtract(rhs, MC); break;
-                case "*": result = stored.multiply(rhs, MC); break;
+                case "+": result = stored.add(rhs); break;
+                case "-": result = stored.subtract(rhs); break;
+                case "*": result = stored.multiply(rhs); break;
                 case "/":
                     if (rhs.compareTo(BigDecimal.ZERO) == 0) {
                         showError("Cannot divide by zero.");
@@ -259,52 +254,67 @@ public class CalculatorApp extends JFrame {
         JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
     }
 
+    /* -------- Key Bindings -------- */
+
     private void installKeyBindings(JComponent root) {
-        Map<String, String> map = new HashMap<>();
-        for (int i = 0; i <= 9; i++) map.put(String.valueOf(i), String.valueOf(i));
-        map.put("+", "+");
-        map.put("-", "-");
-        map.put("*", "*");
-        map.put("/", "/");
-        map.put("ENTER", "=");
-        map.put("EQUALS", "=");
-        map.put("BACK_SPACE", "⌫");
-        map.put("DELETE", "CE");
-        map.put("ESCAPE", "C");
-        map.put("DECIMAL", ".");
-        map.put("PERIOD", ".");
-        map.put("S", "±");
         InputMap im = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         ActionMap am = root.getActionMap();
-        for (Map.Entry<String, String> e : map.entrySet()) {
-            String key = e.getKey();
-            String action = e.getValue();
-            KeyStroke ks = KeyStroke.getKeyStroke(key);
-            if (ks == null) continue;
-            im.put(ks, action);
-            am.put(action, new AbstractAction() {
-                @Override public void actionPerformed(ActionEvent ev) {
-                    onButton(action);
-                }
-            });
-        }
+
+        // digits (main row)
+        for (char c = '0'; c <= '9'; c++) bindChar(im, am, c, String.valueOf(c));
+
+        // operators and dot (main row)
+        bindChar(im, am, '+', "+");
+        bindChar(im, am, '-', "-");
+        bindChar(im, am, '*', "*");
+        bindChar(im, am, '/', "/");
+        bindChar(im, am, '.', ".");
+
+        // Enter/Return (some keyboards map to ACCEPT)
+        bind(im, am, "ENTER", "=");
+        bind(im, am, "ACCEPT", "=");
+
+        // Backspace/Delete/Escape
+        bind(im, am, "BACK_SPACE", "⌫");
+        bind(im, am, "DELETE", "CE");
+        bind(im, am, "ESCAPE", "C");
+
+        // Numpad digits
         for (int i = 0; i <= 9; i++) {
-            KeyStroke ks = KeyStroke.getKeyStroke("NUMPAD" + i);
+            final int digit = i; // capture effectively final
+            KeyStroke ks = KeyStroke.getKeyStroke("NUMPAD" + digit);
             if (ks != null) {
-                im.put(ks, String.valueOf(i));
-                am.put(String.valueOf(i), new AbstractAction() {
+                String d = String.valueOf(digit);
+                im.put(ks, d);
+                am.put(d, new AbstractAction() {
                     @Override public void actionPerformed(ActionEvent e) {
-                        onButton(String.valueOf(i));
+                        onButton(d);
                     }
                 });
             }
         }
+
+        // Numpad ops
         bind(im, am, "ADD", "+");
         bind(im, am, "SUBTRACT", "-");
         bind(im, am, "MULTIPLY", "*");
         bind(im, am, "DIVIDE", "/");
         bind(im, am, "DECIMAL", ".");
-        bind(im, am, "ENTER", "=");
+
+        // Common calculator shortcut for sign toggle
+        bind(im, am, "F9", "±");
+    }
+
+    private void bindChar(InputMap im, ActionMap am, char ch, String actionLabel) {
+        KeyStroke ks = KeyStroke.getKeyStroke(ch);
+        if (ks != null) {
+            im.put(ks, actionLabel);
+            am.put(actionLabel, new AbstractAction() {
+                @Override public void actionPerformed(ActionEvent e) {
+                    onButton(actionLabel);
+                }
+            });
+        }
     }
 
     private void bind(InputMap im, ActionMap am, String key, String actionLabel) {
